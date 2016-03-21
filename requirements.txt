@@ -1,0 +1,4 @@
+git+https://github.com/directxman12/py-xmlmapper
+six
+libvirt-python
+requests
