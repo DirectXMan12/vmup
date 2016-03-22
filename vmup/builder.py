@@ -1,6 +1,7 @@
 import crypt
 import os.path
 import random
+import re
 
 import libvirt
 from lxml import etree
@@ -110,7 +111,20 @@ class VM(vx.Domain):
 
     def share_directory(self, source_path, dest_path, name=None):
         if name is None:
-            name = os.path.basename(source_path)
+            # NB: Python's basename may be '' if the path ends in a '/'
+            #     so we need to deal with that
+            dirname, basename = os.path.split(source_path)
+            if basename:
+                name = basename
+            else:
+                name = os.path.basename(dirname)
+
+            if not name:
+                raise ValueError("Unable to share directory %s: "
+                                 "cannot determine a proper name for it")
+
+            # make sure there's no funny business here
+            name = re.sub(r'[^\w_-]+', '', name)
 
         conf = self._fs_conf(source_path, name)
         self.filesystems.append(conf)
