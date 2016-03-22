@@ -173,11 +173,32 @@ class UserData(object):
     def configure_swap(self, filename, maxsize, size="auto"):
         self.swap = {'filename': filename, 'size': size, maxsize: maxsize}
 
-    def run_command(self, command):
-        if getattr(self, 'runcmd', None) is None:
-            self.runcmd = []
+    def run_command(self, command, when=None, freq=None, ind=None):
+        if when is None:
+            if getattr(self, 'runcmd', None) is None:
+                self.runcmd = []
 
-        self.runcmd.append(command)
+            if ind is None:
+                ind = len(self.runcmd)
+
+            self.runcmd.insert(ind, command)
+        elif when == 'boot':
+            if getattr(self, 'bootcmd', None) is None:
+                self.bootcmd = []
+
+            if ind is None:
+                ind = len(self.bootcmd)
+
+            if freq is None:
+                self.bootcmd.insert(ind, command)
+            else:
+                self.bootcmd.insert(
+                    ind, ['cloud-init-per', freq,
+                          "vmup-cust-%s" % len(self.bootcmd)] + command)
+
+        else:
+            raise ValueError("Cannot run command on '%s' -- "
+                             "only 'boot' or None is supported" % when)
 
     # TODO: CA certs, resolv.conf, alter completion message, call url,
     #       reboot, ssh-keys, puppet?, timezone, etc

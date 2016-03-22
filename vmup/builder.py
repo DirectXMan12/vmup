@@ -290,10 +290,28 @@ class VM(vx.Domain):
                 self._net_config.append('    dns-search %s' % gateway)
 
             if nameservers is not None:
-                if not isinstance(nameservers, str):
-                    nameservers = ' '.join(nameservers)
+                # NB: fedora 23 (and possibly others) have a broken cloud-init
+                #     when dealing with the dns-nameserver option, so fake it
+                #     (see https://bugzilla.redhat.com/show_bug.cgi?id=1280072)
 
-                self._net_config.append('    dns-nameservers %s' % nameservers)
+                # with a working cloud init:
+                # if not isinstance(nameservers, str):
+                #     nameservers = ' '.join(nameservers)
+
+                # self._net_config.append(
+                #     '    dns-nameservers %s' % nameservers)
+
+                if isinstance(nameservers, str):
+                    nameservers = nameservers.split(' ')
+
+                echo_fmt_str = "echo 'nameserver %s' %s /etc/resolv.conf"
+                self.userdata.run_command(
+                    ["sh", "-c",  echo_fmt_str % (nameservers[0], '>')],
+                    when='boot', freq='instance', ind=0)
+                for i, ns in enumerate(nameservers[1:]):
+                    self.userdata.run_command(
+                        ["sh", "-c",  echo_fmt_str % (ns, '>>')],
+                        when='boot', freq='instance', ind=i+1)
 
             if broadcast is not None:
                 self._net_config.append('    broadcast %s' % broadcast)
