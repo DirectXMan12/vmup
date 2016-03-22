@@ -92,7 +92,7 @@ if os.path.exists(dotfile_path):
 args = parser.parse_args(raw_args)
 
 # begin configuration of the VM
-vm = builder.VM(args.hostname, image_dir=args.image_dir)
+vm = builder.VM(args.name, image_dir=args.image_dir)
 
 # set the sizes
 vm.memory = args.memory
