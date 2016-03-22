@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import logging
 import os
 import sys
 
@@ -82,6 +83,9 @@ misc_group.add_argument("--conn", metavar="URI",
 misc_group.add_argument("--new-ci-data",
                         help="overwrite existing cloud-init data",
                         action="store_true", default=False)
+misc_group.add_argument("-v", "LEVEL", default='INFO',
+                        help="set the logging verbosity (may be debug, info, "
+                             "warning, error, or critical, default: info)")
 
 raw_args = sys.argv[1:]
 dotfile_path = os.path.join(os.getcwd(), '.vmup')
@@ -91,6 +95,11 @@ if os.path.exists(dotfile_path):
 
 args = parser.parse_args(raw_args)
 
+args.v = args.v.upper()
+if args.v not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
+    sys.exit('Invalid verbosity %s' % args.v)
+
+logging.basicConfig(level=getattr(logging, args.v))
 # begin configuration of the VM
 vm = builder.VM(args.name, image_dir=args.image_dir)
 
