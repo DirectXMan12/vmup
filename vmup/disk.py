@@ -85,9 +85,9 @@ class FedoraImageFetcher(object):
         try:
             # TODO: figure out a good way to show a progress bar w/o
             #       writing directly to stdout
-            subprocess.run(['wget', '--no-verbose', '--show-progress',
-                            '--continue', img_url], check=True, cwd=img_dir,
-                           universal_newlines=True)
+            subprocess.check_call(['wget', '--no-verbose', '--show-progress',
+                                   '--continue', img_url], cwd=img_dir,
+                                  universal_newlines=True)
         except subprocess.CalledProcessError as ex:
             # the CalledProcessError gets put in __cause__
             # stdout/stderr are printed above
@@ -203,9 +203,9 @@ def make_iso_file(output_path, volid, *source_files,
         LOG.debug("Running command %s to create cloud-init "
                   "iso file..." % command)
         try:
-            subprocess.run(command, check=True, stdout=subprocess.PIPE,
-                           cwd=cwd, stderr=subprocess.PIPE,
-                           universal_newlines=True)
+            subprocess.check_call(command, stdout=subprocess.PIPE,
+                                  cwd=cwd, stderr=subprocess.PIPE,
+                                  universal_newlines=True)
 
         except subprocess.CalledProcessError as ex:
             # the CalledProcessError gets put in __cause__
@@ -233,8 +233,8 @@ def make_disk_file(path, size, backing_file=None,
 
     LOG.debug("Running command %s to create disk..." % command)
     try:
-        subprocess.run(command, check=True, stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE, universal_newlines=True)
+        subprocess.check_call(command, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, universal_newlines=True)
 
     except subprocess.CalledProcessError as ex:
         # the CalledProcessError gets put in __cause__
