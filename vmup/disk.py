@@ -150,7 +150,8 @@ _IMAGE_FETCHERS = {'fedora': FedoraImageFetcher('Base'),
 
 def fetch_image(name, image_dir, check_local=True):
     if name.startswith('/'):
-        return name
+        ext = os.path.splitext(name)[1]
+        return ext, name
 
     parts = name.split('-')
     image_type = parts[0]
