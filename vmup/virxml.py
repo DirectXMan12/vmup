@@ -97,6 +97,7 @@ class Interface(mp.Model):
 class Domain(mp.Model):
     ROOT_ELEM = 'domain'
 
+    uuid = mp.ROOT.uuid
     name = mp.ROOT.name
     memory = mp.ROOT.memory % mp.Custom(_unit_loads, _unit_dumps)
     cpus = mp.ROOT.vcpu

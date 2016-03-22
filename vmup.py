@@ -83,7 +83,14 @@ misc_group.add_argument("--conn", metavar="URI",
 misc_group.add_argument("--new-ci-data",
                         help="overwrite existing cloud-init data",
                         action="store_true", default=False)
-misc_group.add_argument("-v", "LEVEL", default='INFO',
+misc_group.add_argument("--burn",
+                        help="overwrite everything, stopping the existing VM "
+                             "(if present) in the process", default=False,
+                             action='store_true')
+misc_group.add_argument("--halt-existing",
+                        help="stop the existing VM if needed",
+                        default=False, action='store_true')
+misc_group.add_argument("-v", metavar="LEVEL", default='INFO',
                         help="set the logging verbosity (may be debug, info, "
                              "warning, error, or critical, default: info)")
 
@@ -95,13 +102,24 @@ if os.path.exists(dotfile_path):
 
 args = parser.parse_args(raw_args)
 
+# --burn implies the other overwrite options
+if args.burn:
+    args.new_ci_data = True
+    args.halt_existing = True
+
 args.v = args.v.upper()
 if args.v not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
     sys.exit('Invalid verbosity %s' % args.v)
 
 logging.basicConfig(level=getattr(logging, args.v))
+
 # begin configuration of the VM
-vm = builder.VM(args.name, image_dir=args.image_dir)
+vm = builder.VM(args.name, image_dir=args.image_dir,
+                conn_uri=args.conn)
+
+if vm.load_existing(halt=args.halt_existing):
+    sys.exit("Cowardly refusing to overwrite a running VM.  Try running with "
+             "--halt-existing")
 
 # set the sizes
 vm.memory = args.memory
@@ -112,7 +130,8 @@ _, backing_file = disk_helper.fetch_image(args.base_image, args.image_dir,
                                           not args.always_fetch)
 
 # provision the disk
-vm.provision_disk('main', args.size, backing_file)
+vm.provision_disk('main', args.size, backing_file,
+                  overwrite=args.burn)
 
 # set up 9p shared images
 for arg in (arg.split(':') for arg in args.share):
@@ -173,4 +192,4 @@ vm.configure_networking(net_type, **net_args)
 vm.finalize(recreate_ci=args.new_ci_data)
 
 # define the VM and launch it
-vm.launch(conn_uri=args.conn, redefine=args.new_ci_data)
+vm.launch(redefine=args.new_ci_data)

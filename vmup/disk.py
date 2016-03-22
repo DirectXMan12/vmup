@@ -228,7 +228,7 @@ def make_disk_file(path, size, backing_file=None,
             return None
 
         LOG.info("Disk file '%s' exists, deleting to "
-                 "recreate..." % output_path)
+                 "recreate..." % path)
         os.remove(path)
 
     LOG.debug("Running command %s to create disk..." % command)

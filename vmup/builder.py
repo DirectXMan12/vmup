@@ -1,4 +1,5 @@
 import crypt
+import logging
 import os.path
 import random
 import re
@@ -14,11 +15,19 @@ from vmup import disk as disk_helper
 # avoid printing errors to stderr
 libvirt.registerErrorHandler(lambda c, e: None, None)
 
+LOG = logging.getLogger(__name__)
+
 
 class VM(vx.Domain):
-    def __init__(self, hostname, image_dir='/var/lib/libvirt/images'):
+    def __init__(self, hostname, image_dir='/var/lib/libvirt/images',
+                 conn_uri=None):
         self._hostname = hostname
         self._img_dir = image_dir
+
+        self._existing_mac = None
+
+        self._conn_uri = conn_uri
+        self._conn_obj = None
 
         self._disk_cnt = 0
 
@@ -33,6 +42,27 @@ class VM(vx.Domain):
         self.name = hostname
 
         self.userdata = nac.UserData()
+
+    def load_existing(self, halt=False):
+        dom = self._lookup_domain()
+        if dom is None:
+            LOG.debug("No existing domain found...")
+            return False
+
+        LOG.debug("Existing domain found...")
+        if halt and dom.isActive():
+            LOG.info("Existing domain was active, stopping it...")
+            dom.destroy()
+
+        dom_xml = dom.XMLDesc(libvirt.VIR_DOMAIN_XML_INACTIVE)
+        dom_view = vx.Domain(dom_xml)
+
+        self.uuid = dom_view.uuid
+        self._existing_mac = dom_view.interfaces[-1].mac_address
+        LOG.info("Reusing existing UUID '%s' and MAC address '%s'..." %
+                 (self.uuid, self._existing_mac))
+
+        return dom.isActive() != 0
 
     def inject_file(self, dest_path, content, permissions=None, **kwargs):
         # TODO: gzip large files and use the gzip encoding?
@@ -74,31 +104,25 @@ class VM(vx.Domain):
         self._make_cloud_init(overwrite=recreate_ci)
         return self.to_xml(pretty_print=True, encoding=str)
 
-    def launch(self, xml=None, redefine=None, start=True, conn_uri=None):
+    def launch(self, xml=None, redefine=None, start=True):
         if xml is None:
             xml = self.to_xml(pretty_print=True, encoding=str)
 
-        conn = libvirt.open(conn_uri)
-
-        try:
-            dom = conn.lookupByName(self.name)
-        except libvirt.libvirtError as ex:
-            if ex.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
-                dom = None
-            else:
-                raise
+        dom = self._lookup_domain()
 
         if redefine and dom is not None:
+            LOG.debug("Undefining existing VM...")
             dom.undefine()
             dom = None
 
         if dom is None:
-            dom = conn.defineXML(xml)
+            LOG.debug("Defining new VM...")
+            dom = self._conn.defineXML(xml)
 
         if start and dom is not None:
+            LOG.info("Launching VM...")
             dom.create()
-
-        conn.close()
+            LOG.info("Launched VM!")
 
     def provision_disk(self, name, size, backing_file=None,
                        fmt='qcow2', overwrite=False):
@@ -281,6 +305,9 @@ class VM(vx.Domain):
         self.disks.append(self._ci_disk_conf())
 
     def _gen_mac_addr(self):
+        if self._existing_mac is not None:
+            return self._existing_mac
+
         # TODO: make this deterministic?
         raw_mac = [0x52, 0x54, 0x00,
                    random.randint(0, 255),
@@ -288,3 +315,19 @@ class VM(vx.Domain):
                    random.randint(0, 255)]
 
         return ':'.join("{:02x}".format(b) for b in raw_mac)
+
+    @property
+    def _conn(self):
+        if self._conn_obj is None:
+            self._conn_obj = libvirt.open(self._conn_uri)
+
+        return self._conn_obj
+
+    def _lookup_domain(self):
+        try:
+            return self._conn.lookupByName(self.name)
+        except libvirt.libvirtError as ex:
+            if ex.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                return None
+            else:
+                raise
