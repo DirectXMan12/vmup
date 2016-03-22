@@ -154,8 +154,10 @@ vm.configure_user(args.user, args.password, groups, authorized_keys)
 # set up the networking
 net_parts = args.net.split(':')
 net_type = net_parts[0]
-net_args = {v[0]: v[1] for v in
-            (kv.split('=') for kv in net_parts[1].split(','))}
+net_args = {}
+if len(net_parts) > 1:
+    net_args = {v[0]: v[1] for v in
+                (kv.split('=') for kv in net_parts[1].split(','))}
 vm.configure_networking(net_type, **net_args)
 
 # write out any remaining data
