@@ -5,6 +5,8 @@ import logging
 import os
 import sys
 
+import requests
+
 from vmup import builder
 from vmup import disk as disk_helper
 
@@ -75,6 +77,13 @@ cmd_group.add_argument("--add-file", metavar="SOURCE:DEST[:PERM]",
 cmd_group.add_argument("--run-cmd", metavar="CMD",
                        help=("run a command after boot"), action="append",
                        default=[])
+cmd_group.add_argument("--add-packages", metavar="PKGS", default=[], nargs='+',
+                       help="install the given package in the VM (multiple "
+                            "packages may be installed by listing multiple "
+                            "space-separated packages)")
+cmd_group.add_argument("--add-repo", metavar="REPO_FILE_OR_URL",
+                       action="append", default=[],
+                       help="add the given YUM repos to the VM")
 
 misc_group = parser.add_argument_group("misc")
 misc_group.add_argument("--conn", metavar="URI",
@@ -187,6 +196,23 @@ if len(net_parts) > 1:
     net_args = {v[0]: v[1] for v in
                 (kv.split('=') for kv in net_parts[1].split(','))}
 vm.configure_networking(net_type, **net_args)
+
+# configure YUM repos
+for repo in args.add_repo:
+    if repo.startswith('http://') or repo.startswith('https://'):
+        req = requests.get(repo)
+        repo_file_contents = req.text
+    else:
+        with open(repo) as repo_file:
+            repo_file_contents = repo_file.read()
+
+    vm.use_repo(repo_file_contents)
+
+# NB: sross Fedora seems to have some AVC issues with doing an upgrade
+# vm.upgrade_all_packages()
+# install packages
+for pkg in args.add_packages:
+    vm.install_package(*pkg.split('-', 1))
 
 # write out any remaining data
 vm.finalize(recreate_ci=args.new_ci_data)

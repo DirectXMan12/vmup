@@ -1,3 +1,4 @@
+import configparser
 import crypt
 import logging
 import os.path
@@ -185,6 +186,22 @@ class VM(vx.Domain):
 
         self._set_net_config(**{k.replace('-', '_'): v
                                 for k, v in kwargs.items()})
+
+    def install_package(self, name, version=None):
+        self.userdata.install_package(name, version)
+
+    def upgrade_all_packages(self):
+        self.userdata.run_upgrade()
+
+    def use_repo(self, repo_file_contents):
+        c = configparser.ConfigParser()
+        c.read_string(repo_file_contents)
+
+        for section in c.sections():
+            desc = c[section].pop('name')
+            enabled = c[section].pop('enabled', '0') == '1'
+            self.userdata.configure_yum_repo(
+                name=section, desc=desc, enabled=enabled, **c[section])
 
     def _next_disk(self):
         disk = chr(self._disk_cnt + ord('a'))
