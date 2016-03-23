@@ -3,12 +3,16 @@
 import argparse
 import logging
 import os
+import shlex
 import sys
 
 import requests
 
 from vmup import builder
 from vmup import disk as disk_helper
+
+
+LOG = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser()
 
@@ -103,11 +107,20 @@ misc_group.add_argument("-v", metavar="LEVEL", default='INFO',
                         help="set the logging verbosity (may be debug, info, "
                              "warning, error, or critical, default: info)")
 
-raw_args = sys.argv[1:]
+raw_args = []
+
+dotrc_path = os.path.expanduser('~/.vmuprc')
+if os.path.exists(dotrc_path):
+    with open(dotrc_path) as dotrc:
+        raw_args.extend(shlex.split(dotrc.read()))
+
 dotfile_path = os.path.join(os.getcwd(), '.vmup')
 if os.path.exists(dotfile_path):
     with open(dotfile_path) as dotfile:
-        raw_args.extend(dotfile.read().split())
+        raw_args.extend(shlex.split(dotfile.read()))
+
+# TODO: manually expanduser on the raw_args arguments?
+raw_args.extend(sys.argv[1:])
 
 args = parser.parse_args(raw_args)
 
@@ -121,6 +134,8 @@ if args.v not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
     sys.exit('Invalid verbosity %s' % args.v)
 
 logging.basicConfig(level=getattr(logging, args.v))
+
+LOG.debug('All arguments: %s' % raw_args)
 
 # begin configuration of the VM
 vm = builder.VM(args.name, image_dir=args.image_dir,
