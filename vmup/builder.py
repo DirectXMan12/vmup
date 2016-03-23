@@ -40,7 +40,7 @@ class VM(vx.Domain):
             super(VM, self).__init__(etree.fromstring(templ.read(),
                                                       parser=parser))
 
-        self.name = hostname
+        self.name = hostname.replace('.', '-')
 
         self.userdata = nac.UserData()
 
@@ -187,6 +187,38 @@ class VM(vx.Domain):
         self._set_net_config(**{k.replace('-', '_'): v
                                 for k, v in kwargs.items()})
 
+        # inject /etc/hosts with useful info
+        # we could just use the cloud-init hosts file manager,
+        # but that overwrites on every boot
+        if 'ip' in kwargs:
+            ip = kwargs['ip']
+        else:
+            ip = '127.0.0.1'
+
+        hostname_parts = self._hostname.split('.', 1)
+        hostname = hostname_parts[0]
+        if len(hostname_parts) > 1:
+            fqdn = self._hostname
+        else:
+            fqdn = "%s.localdomain" % hostname
+
+
+        # whenever the instance changes, look for the old info, replace it
+        # if present, otherwise append the new info
+        pat = r"^\s*[0-9]{1,3}(\.[0-9]{1,3}){3}\s+%s\s+%s\s*$" % (
+            fqdn.replace('.', r'\.'), hostname)
+        grep_cmd = "egrep '%s' /etc/hosts" % pat
+
+        new_entry = '%s %s %s' % (ip, fqdn, hostname)
+        sed_cmd = "sed -r -i 's/%s/%s/' /etc/hosts" % (pat, new_entry)
+        append_cmd = ("echo '%s' " ">> /etc/hosts") % new_entry
+        full_cmd = "(%s && %s) || %s" % (grep_cmd, sed_cmd, append_cmd)
+
+        # THIS COMMAND LOOKS FUN WHEN PRINTED OUT
+        self.userdata.run_command(['sh', '-c', full_cmd],
+                                  when="boot", freq="instance")
+
+
     def install_package(self, name, version=None):
         self.userdata.install_package(name, version)
 
@@ -216,7 +248,7 @@ class VM(vx.Domain):
         ci_disk.device_type = 'file:cdrom'
         ci_disk.driver = 'qemu:raw'
         ci_disk.source_file = os.path.join(self._img_dir,
-                                           '%s-cidata.iso' % self._hostname)
+                                           '%s-cidata.iso' % self.name)
         ci_disk.target = 'ide:hd%s' % self._next_disk()
         ci_disk.read_only = True
 
@@ -336,7 +368,8 @@ class VM(vx.Domain):
     def _make_cloud_init(self, overwrite=False):
         nac.make_cloud_init(self._hostname, self.userdata,
                             outdir=self._img_dir, overwrite=overwrite,
-                            net=self._net_config)
+                            net=self._net_config,
+                            outname='%s-cidata.iso' % self.name)
         self.disks.append(self._ci_disk_conf())
 
     def _gen_mac_addr(self):
