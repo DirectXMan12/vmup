@@ -59,7 +59,11 @@ class VM(vx.Domain):
         dom_view = vx.Domain(dom_xml)
 
         self.uuid = dom_view.uuid
-        self._existing_mac = dom_view.interfaces[-1].mac_address
+        if len(dom_view.interfaces) > 0:
+            self._existing_mac = dom_view.interfaces[-1].mac_address
+        else:
+            self._existing_mac = None
+
         LOG.info("Reusing existing UUID '%s' and MAC address '%s'..." %
                  (self.uuid, self._existing_mac))
 
@@ -179,13 +183,17 @@ class VM(vx.Domain):
                                           mac, kwargs.pop('portgroup', None))
         elif fmt == 'ovs':
             conf = self._ovs_net_conf(kwargs.pop('bridge'), mac)
+        elif fmt == 'none':
+            self._net_config = []
+            conf = None
         else:
             raise ValueError("Unknown networking type '%s'" % fmt)
 
-        self.interfaces.append(conf)
+        if conf is not None:
+            self.interfaces.append(conf)
 
-        self._set_net_config(**{k.replace('-', '_'): v
-                                for k, v in kwargs.items()})
+            self._set_net_config(**{k.replace('-', '_'): v
+                                    for k, v in kwargs.items()})
 
         # inject /etc/hosts with useful info
         # we could just use the cloud-init hosts file manager,

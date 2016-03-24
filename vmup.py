@@ -49,9 +49,9 @@ size_group.add_argument("--cpus",
 
 dev_group = parser.add_argument_group("devices")
 dev_group.add_argument('--net', metavar="TYPE[:arg1=v1,arg2=v2,...]",
-                       help=("Configure the type of networking (default or "
-                             "OVS).  Arguments such as 'ip=a.b.c.d' may be "
-                             "specified to control networking setup."),
+                       help=("Configure the type of networking (default, ovs, "
+                             "or none).  Arguments such as 'ip=a.b.c.d' may "
+                             "be specified to control networking setup."),
                        default="default")
 
 auth_group = parser.add_argument_group("auth")
