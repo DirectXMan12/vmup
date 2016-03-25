@@ -20,15 +20,28 @@ LOG = logging.getLogger(__name__)
 
 
 class VM(vx.Domain):
-    def __init__(self, hostname, image_dir='/var/lib/libvirt/images',
+    def __init__(self, hostname, image_dir='POOL:default',
                  conn_uri=None):
         self._hostname = hostname
-        self._img_dir = image_dir
-
-        self._existing_mac = None
 
         self._conn_uri = conn_uri
         self._conn_obj = None
+
+        self._img_loc = image_dir
+        self._img_loc_type = 'file'
+        if image_dir[:5].lower() == 'pool:':
+            pool_name = image_dir[5:]
+            try:
+                self._img_loc = self._conn.storagePoolLookupByName(pool_name)
+            except libvirt.libvirtError as ex:
+                if ex.get_error_code() == libvirt.VIR_ERR_NO_STORAGE_POOL:
+                    raise ValueError("No such storage pool '%s'" % pool_name)
+                else:
+                    raise
+
+            self._img_loc_type = 'pool'
+
+        self._existing_mac = None
 
         self._disk_cnt = 0
 
@@ -43,6 +56,19 @@ class VM(vx.Domain):
         self.name = hostname.replace('.', '-')
 
         self.userdata = nac.UserData()
+
+    def fetch_base_image(self, source, always_fetch=False):
+        # fetch the base image
+        if self._img_loc_type == 'pool':
+            _, backing_file = disk_helper.fetch_image(
+                source, pool=self._img_loc,
+                check_local=not always_fetch)
+        else:
+            _, backing_file = disk_helper.fetch_image(
+                source, img_dir=self._img_loc,
+                check_local=not always_fetch)
+
+        return backing_file
 
     def load_existing(self, halt=False):
         dom = self._lookup_domain()
@@ -131,10 +157,18 @@ class VM(vx.Domain):
 
     def provision_disk(self, name, size, backing_file=None,
                        fmt='qcow2', overwrite=False):
-        disk_helper.make_disk_file(
-            self._main_disk_path(name, fmt), size,
-            os.path.join(self._img_dir, backing_file), fmt,
-            overwrite=overwrite)
+
+        if self._img_loc_type == 'pool':
+            disk_helper.make_disk_volume(
+                self._img_loc, self._main_disk_name(name, fmt), size,
+                fmt, backing_file=backing_file, overwrite=overwrite)
+
+        else:
+            disk_helper.make_disk_file(
+                self._main_disk_path(name, fmt), size,
+                os.path.join(self._img_loc, backing_file), fmt,
+                overwrite=overwrite)
+
         disk = self._main_disk_conf(name, fmt)
         self.disks.append(disk)
 
@@ -248,15 +282,24 @@ class VM(vx.Domain):
         self._disk_cnt += 1
         return disk
 
+    def _main_disk_name(self, name, fmt):
+        return "%s-%s.%s" % (self.name, name, fmt)
+
     def _main_disk_path(self, name, fmt):
-        return os.path.join(self._img_dir, "%s-%s.%s" % (self.name, name, fmt))
+        return os.path.join(self._img_loc, self._main_disk_name(name, fmt))
 
     def _ci_disk_conf(self):
         ci_disk = vx.Disk()
-        ci_disk.device_type = 'file:cdrom'
+        if self._img_loc_type == 'pool':
+            ci_disk.device_type = 'volume:cdrom'
+            ci_disk.source_vol = '%s:%s' % (self._img_loc.name(),
+                                               '%s-cidata.iso' % self.name)
+        else:
+            ci_disk.device_type = 'file:cdrom'
+            ci_disk.source_file = os.path.join(self._img_loc,
+                                               '%s-cidata.iso' % self.name)
+
         ci_disk.driver = 'qemu:raw'
-        ci_disk.source_file = os.path.join(self._img_dir,
-                                           '%s-cidata.iso' % self.name)
         ci_disk.target = 'ide:hd%s' % self._next_disk()
         ci_disk.read_only = True
 
@@ -264,10 +307,16 @@ class VM(vx.Domain):
 
     def _main_disk_conf(self, name, fmt='qcow2'):
         disk = vx.Disk()
-        disk.device_type = 'file:disk'
+        if self._img_loc_type == 'pool':
+            disk.device_type = 'volume:disk'
+            disk.source_vol = '%s:%s' % (self._img_loc.name(),
+                                         self._main_disk_name(name, fmt))
+        else:
+            disk.device_type = 'file:disk'
+            disk.source_file = self._main_disk_path(name, fmt)
+
         disk.driver = 'qemu:%s' % fmt
         disk.target = 'virtio:vd%s' % self._next_disk()
-        disk.source_file = self._main_disk_path(name, fmt)
 
         self._disk_cnt += 1
 
@@ -374,9 +423,16 @@ class VM(vx.Domain):
                 self._net_config.append('    broadcast %s' % broadcast)
 
     def _make_cloud_init(self, overwrite=False):
+        pool = None
+        outdir = None
+        if self._img_loc_type == 'pool':
+            pool = self._img_loc
+        else:
+            outdir = self._img_loc
+
         nac.make_cloud_init(self._hostname, self.userdata,
-                            outdir=self._img_dir, overwrite=overwrite,
-                            net=self._net_config,
+                            outdir=outdir, overwrite=overwrite,
+                            net=self._net_config, pool=pool,
                             outname='%s-cidata.iso' % self.name)
         self.disks.append(self._ci_disk_conf())
 

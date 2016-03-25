@@ -7,6 +7,10 @@ import requests
 import subprocess
 import urllib.parse as urlparse
 
+import libvirt
+
+from vmup import virxml as vx
+
 LOG = logging.getLogger(__name__)
 
 ImageInfo = collections.namedtuple('ImageInfo', ['full_name', 'version',
@@ -77,16 +81,42 @@ class FedoraImageFetcher(object):
         img_info = next(i for i in images if i.fmt == fmt)
         return img_info
 
-    def fetch(self, img_dir, image, release):
+    def _init_img_vol(self, pool, image):
+        try:
+            existing = pool.storageVolLookupByName(image)
+        except libvirt.libvirtError as ex:
+            if ex.get_error_code() != libvirt.VIR_ERR_NO_STORAGE_VOL:
+                raise
+
+            conf = _vol_conf(image, '0 KiB', 'raw', owned=True)
+            existing = pool.createXML(conf.to_xml(encoding=str))
+
+        desc = vx.Volume(existing.XMLDesc())
+
+        return (desc.target.owner == os.getuid(), existing)
+
+    def fetch(self, image, release, img_dir=None, pool=None):
+        if pool is not None:
+            pool.refresh()
+            perms, vol = self._init_img_vol(pool, image)
+            if not perms:
+                return vol.path()
+
+            out_path = vol.path()
+        else:
+            out_path = os.path.join(img_dir, image)
+
         img_url = self.BASE_URL.format(release=release, image=image)
+
+        command = ['wget', '--no-verbose', '--show-progress',
+                   '--continue', img_url]
 
         # TODO: print stdout/stderr on err
         LOG.debug("Running command %s to fetch image..." % ['wget', img_url])
         try:
             # TODO: figure out a good way to show a progress bar w/o
             #       writing directly to stdout
-            subprocess.check_call(['wget', '--no-verbose', '--show-progress',
-                                   '--continue', img_url], cwd=img_dir,
+            subprocess.check_call(command, cwd=img_dir,
                                   universal_newlines=True)
         except subprocess.CalledProcessError as ex:
             # the CalledProcessError gets put in __cause__
@@ -94,20 +124,25 @@ class FedoraImageFetcher(object):
             raise Exception("Image fetching failed: "
                             "exit code %s" % ex.returncode)
 
-        return os.path.join(img_dir, image)
+        return out_path
 
-    def find_local_images(self, img_dir):
-        all_files = os.listdir(img_dir)
+    def find_local_images(self, img_dir=None, pool=None):
+        if pool is not None:
+            pool.refresh()
+            all_files = pool.listVolumes()
+        else:
+            all_files = os.listdir(img_dir)
+
         matches = ((img, self.NAME_RE.match(img)) for img in all_files)
+        # TODO: return the format as detected by libvirt when we can
         img_files = (ImageInfo(img, (m.group(1), m.group(2)),
                                m.group(3), m.group(5))
                      for img, m in matches if m)
 
-        # image name, release, compose, format, compression_format
         return img_files
 
-    def find_local_image(self, img_dir, version=None,
-                         fmt=None, compression=False):
+    def find_local_image(self, img_dir=None, pool=None,
+                         version=None, fmt=None, compression=False):
         release = None
         compose = None
 
@@ -116,7 +151,7 @@ class FedoraImageFetcher(object):
             if len(version) > 1:
                 compose = version[1]
 
-        all_images = self.find_local_images(img_dir)
+        all_images = self.find_local_images(img_dir=img_dir, pool=pool)
 
         res_imgs = all_images
         if fmt is not None:
@@ -148,7 +183,7 @@ _IMAGE_FETCHERS = {'fedora': FedoraImageFetcher('Base'),
                    'fedora-atomic': FedoraImageFetcher('Atomic')}
 
 
-def fetch_image(name, image_dir, check_local=True):
+def fetch_image(name, img_dir=None, pool=None, check_local=True):
     if name.startswith('/'):
         ext = os.path.splitext(name)[1]
         return ext, name
@@ -163,15 +198,20 @@ def fetch_image(name, image_dir, check_local=True):
         fetcher = _IMAGE_FETCHERS[image_type]
 
         if check_local:
-            img_info = fetcher.find_local_image(image_dir, version=version)
+            img_info = fetcher.find_local_image(img_dir=img_dir, pool=pool,
+                                                version=version)
             if img_info is not None:
                 if img_info.compression is not None:
                     # TODO: warn and fall back to downloading?
                     raise NotImplementedError("Unable to handle compressed "
                                               "image %s" % img_info.full_name)
 
-                return (img_info.fmt,
-                        os.path.join(image_dir, img_info.full_name))
+                if pool is not None:
+                    res_img = img_info.full_name
+                else:
+                    res_img = os.path.join(img_dir, img_info.full_name)
+
+                return (img_info.fmt, res_img)
 
         img_info = fetcher.get_image(version)
 
@@ -179,10 +219,31 @@ def fetch_image(name, image_dir, check_local=True):
             raise NotImplementedError("Unable to handle compressed "
                                       "image %s" % img_info.full_name)
 
-        return (img_info.fmt, fetcher.fetch(image_dir, img_info.full_name,
+        return (img_info.fmt, fetcher.fetch(img_dir, img_info.full_name,
                                             img_info.version[0]))
     else:
         raise ValueError("Unknown image alias '%s'" % name)
+
+
+def _vol_conf(name, size, fmt='raw', backing_file=None, owned=False):
+    vol = vx.Volume()
+    vol.name = name
+    if backing_file is not None:
+        vol.allocation = '0 KiB'
+        vol.backing_file = backing_file
+        if os.path.splitext(backing_file)[1] == '.qcow2':
+            vol.backing_fmt = 'qcow2'
+        else:
+            vol.backing_fmt = 'raw'
+
+    vol.capacity = size
+    vol.target.fmt = fmt
+    vol.target.perms = '0644'
+
+    if owned:
+        vol.target.owner = os.getuid()
+
+    return vol
 
 
 def make_iso_file(output_path, volid, *source_files,
@@ -211,7 +272,7 @@ def make_iso_file(output_path, volid, *source_files,
         except subprocess.CalledProcessError as ex:
             # the CalledProcessError gets put in __cause__
             raise Exception("cloud-init iso file creation "
-                            "failed: %s" % res.stderr)
+                            "failed: %s" % ex.stderr)
 
 
 def make_disk_file(path, size, backing_file=None,
@@ -240,3 +301,68 @@ def make_disk_file(path, size, backing_file=None,
     except subprocess.CalledProcessError as ex:
         # the CalledProcessError gets put in __cause__
         raise Exception("Disk creation command failed: %s" % ex.stderr)
+
+
+def make_disk_volume(pool, name, size, fmt='qcow2',
+                     backing_file=None, overwrite=True):
+    pool.refresh()
+
+    try:
+        existing = pool.storageVolLookupByName(name)
+    except libvirt.libvirtError as ex:
+        if ex.get_error_code() != libvirt.VIR_ERR_NO_STORAGE_VOL:
+            raise
+    else:
+        if not overwrite:
+            LOG.info("Disk volume '%s' exists in pool '%s', "
+                     "not recreating..." % (name, pool.name()))
+            return None
+
+        LOG.info("Disk volume '%s' exists in pool '%s', deleting to "
+                 "recreate..." % (name, pool.name()))
+        existing.delete()
+
+    conf = _vol_conf(name, size, fmt, backing_file=backing_file)
+
+    pool.createXML(conf.to_xml(encoding=str))
+
+
+def make_iso_volume(pool, name, volid, *source_files,
+                    overwrite=False, cwd=None):
+    pool.refresh()
+
+    try:
+        existing = pool.storageVolLookupByName(name)
+    except libvirt.libvirtError as ex:
+        if ex.get_error_code() != libvirt.VIR_ERR_NO_STORAGE_VOL:
+            raise
+    else:
+        if not overwrite:
+            LOG.info("Cloud-init iso volume '%s' exists in pool '%s', "
+                     "deleting to recreate..." % (name, pool.name()))
+            return None
+
+        LOG.info("Cloud-init iso volume '%s' exists in pool '%s', "
+                 "not recreating..." % (name, pool.name()))
+        existing.delete()
+
+    conf = _vol_conf(name, '0 KiB', 'raw', owned=True)
+
+    vol = pool.createXML(conf.to_xml(encoding=str))
+
+    # TODO: technically, we should probably upload, not use the path argument here
+    command = ["genisoimage", "-output", vol.path(), "-volid", volid,
+               "-joliet", "-rock"]
+    command.extend(source_files)
+
+    LOG.debug("Running command %s to write to cloud-init "
+              "iso volume..." % command)
+    try:
+        subprocess.check_call(command, stdout=subprocess.PIPE,
+                              cwd=cwd, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+
+    except subprocess.CalledProcessError as ex:
+        # the CalledProcessError gets put in __cause__
+        raise Exception("cloud-init iso file creation "
+                        "failed: %s" % ex.stderr)

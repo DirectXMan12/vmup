@@ -205,8 +205,8 @@ class UserData(object):
 
 
 def make_cloud_init(hostname, user_data, outname='{hostname}-cidata.iso',
-                    outdir='/var/lib/libvirt/images', net=None,
-                    overwrite=False):
+                    outdir='/var/lib/libvirt/images', pool=None,
+                    net=None, overwrite=False):
     metadata = get_metadata(hostname, net=net)
     userdata = yaml.safe_dump(user_data.__getstate__())
 
@@ -218,8 +218,15 @@ def make_cloud_init(hostname, user_data, outname='{hostname}-cidata.iso',
             udf.write("#cloud-config\n")
             udf.write(userdata)
 
-        output_path = os.path.join(outdir, outname.format(hostname=hostname))
 
-        return disk_helpers.make_iso_file(output_path, 'cidata', "user-data",
-                                          "meta-data", overwrite=overwrite,
-                                          cwd=tmpdir)
+        if pool is None:
+            output_path = os.path.join(outdir,
+                                       outname.format(hostname=hostname))
+            return disk_helpers.make_iso_file(
+                output_path, 'cidata', "user-data", "meta-data",
+                overwrite=overwrite, cwd=tmpdir)
+        else:
+            
+            return disk_helpers.make_iso_volume(
+                pool, outname, 'cidata', "user-data",
+                "meta-data", overwrite=overwrite, cwd=tmpdir)

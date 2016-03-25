@@ -22,7 +22,7 @@ img_group = parser.add_argument_group("image")
 img_group.add_argument("--image-dir",
                        help=("the directory in which to store the images"
                              "(defaults: /var/lib/libvirt/images)"),
-                       default="/var/lib/libvirt/images")
+                       default="POOL:default")
 img_group.add_argument("--base-image", metavar="PATH_OR_ALIAS",
                        help=("base image to create the main disk from"
                              "(should be a full path or a name, such as "
@@ -149,9 +149,7 @@ if vm.load_existing(halt=args.halt_existing):
 vm.memory = args.memory
 vm.cpus = args.cpus
 
-# fetch the base image
-_, backing_file = disk_helper.fetch_image(args.base_image, args.image_dir,
-                                          not args.always_fetch)
+backing_file = vm.fetch_base_image(args.base_image, args.always_fetch)
 
 # provision the disk
 vm.provision_disk('main', args.size, backing_file,
