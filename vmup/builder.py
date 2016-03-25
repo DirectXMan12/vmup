@@ -1,3 +1,4 @@
+import base64
 import configparser
 import crypt
 import logging
@@ -57,6 +58,23 @@ class VM(vx.Domain):
 
         self.userdata = nac.UserData()
 
+        # NB: did you know that write_files runs *before* 'create-users'?
+        #     this makes the owner field pretty much worthless.
+        #     Lets move that after, shall we?
+        self.userdata.cloud_init_modules = [  # HAX
+            'migrator', 'bootcmd', 'growpart', 'resizefs', 'set_hostname',
+            'update_hostname', 'update_etc_hosts', 'rsyslog', 'users-groups',
+            'write-files', 'ssh']
+
+        # In fact, while we're at it, let's trim out what we don't need...
+        self.userdata.cloud_config_modules = [
+            'mounts', 'locale', 'set-passwords', 'yum-add-repo', 'package-update-upgrade-install',
+            'timezone', 'disable-ec2-metadata', 'runcmd']
+
+        self.cloud_final_modules = [
+            'scripts-per-once', 'scripts-per-boot', 'scripts-per-instance', 'scripts-user',
+            'ssh-authkey-fingerprints', 'keys-to-console']
+
     def fetch_base_image(self, source, always_fetch=False):
         # fetch the base image
         if self._img_loc_type == 'pool':
@@ -99,6 +117,22 @@ class VM(vx.Domain):
         # TODO: gzip large files and use the gzip encoding?
         if permissions is not None:
             kwargs['permissions'] = permissions
+
+        # NB: Fedora 23 (and probably other places that use
+        # Python 3) have a bug with binary encoding were
+        # it gets writen as text in the form of b'xyz',
+        # but pre-base64 encoding seems to work fine.
+        # WHAT MORTAL KNOWS THE SECRETS OF CLOUD-INIT?
+        if 'encoding' not in kwargs:
+            kwargs['encoding'] = 'base64'
+            content = base64.b64encode(content).decode('ascii')
+
+        # automatically assign a reasonable owner to files in home directories
+        if dest_path.startswith('/home/'):
+           path_parts = dest_path.split(os.sep)
+           if len(path_parts) > 3:
+               user = path_parts[2]
+               kwargs['owner'] = '%s:%s' % (user, user)
 
         self.userdata.add_file(dest_path, content, **kwargs)
 
