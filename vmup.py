@@ -157,7 +157,16 @@ vm.provision_disk('main', args.size, backing_file,
 
 # set up 9p shared images
 for arg in (arg.split(':') for arg in args.share):
-    vm.share_directory(arg[0], arg[1])
+    writable = False
+    mode = None
+
+    if len(arg) > 2:
+        mode_args = arg[2].split('-')
+        writable = (mode_args[0] == 'rw')
+        if len(mode_args) > 1:
+            mode = mode_args[1]
+
+    vm.share_directory(arg[0], arg[1], writable=writable, mode=mode)
 
 # inject files
 for arg in (arg.split(':') for arg in args.add_file):

@@ -206,7 +206,8 @@ class VM(vx.Domain):
         disk = self._main_disk_conf(name, fmt)
         self.disks.append(disk)
 
-    def share_directory(self, source_path, dest_path, name=None):
+    def share_directory(self, source_path, dest_path, name=None,
+                        writable=False, mode=None):
         if name is None:
             # NB: Python's basename may be '' if the path ends in a '/'
             #     so we need to deal with that
@@ -223,7 +224,7 @@ class VM(vx.Domain):
             # make sure there's no funny business here
             name = re.sub(r'[^\w_-]+', '', name)
 
-        conf = self._fs_conf(source_path, name)
+        conf = self._fs_conf(source_path, name, writable=writable, mode=mode)
         self.filesystems.append(conf)
 
         # NB: the cloud-init mounts module ensures the target dir exists
@@ -356,13 +357,22 @@ class VM(vx.Domain):
 
         return disk
 
-    def _fs_conf(self, path, name):
+    def _fs_conf(self, path, name, writable=False, mode=None):
         fs = vx.Filesystem()
         fs.fs_type = 'mount'
-        fs.access_mode = 'squash'
+
+        if mode is None:
+            if writable:
+                # squash is a bit finnicky with writing
+                mode = 'mapped'
+            else:
+                mode = 'squash'
+
+        fs.access_mode = mode
+
         fs.source_dir = path
         fs.target_name = name
-        fs.read_only = True
+        fs.read_only = not writable
 
         return fs
 
