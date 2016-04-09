@@ -109,7 +109,7 @@ class FedoraImageFetcher(object):
         img_url = self.BASE_URL.format(release=release, image=image)
 
         command = ['wget', '--no-verbose', '--show-progress',
-                   '--continue', img_url]
+                   '--continue', img_url, '-O', out_path]
 
         # TODO: print stdout/stderr on err
         LOG.debug("Running command %s to fetch image..." % ['wget', img_url])
@@ -219,8 +219,9 @@ def fetch_image(name, img_dir=None, pool=None, check_local=True):
             raise NotImplementedError("Unable to handle compressed "
                                       "image %s" % img_info.full_name)
 
-        return (img_info.fmt, fetcher.fetch(img_dir, img_info.full_name,
-                                            img_info.version[0]))
+        return (img_info.fmt, fetcher.fetch(img_info.full_name,
+                                            img_info.version[0],
+                                            img_dir=img_dir, pool=pool))
     else:
         raise ValueError("Unknown image alias '%s'" % name)
 
