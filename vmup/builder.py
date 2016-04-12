@@ -3,6 +3,7 @@ import configparser
 import crypt
 import logging
 import os.path
+import pkg_resources
 import random
 import re
 
@@ -48,11 +49,14 @@ class VM(vx.Domain):
 
         self._net_config = []
 
-        with open('template.xml') as templ:
-            # use a different parser to ensure pretty-printing works
-            parser = etree.XMLParser(remove_blank_text=True)
-            super(VM, self).__init__(etree.fromstring(templ.read(),
-                                                      parser=parser))
+        if os.path.exists('.vmup.template.xml'):
+            with open('.vmup.template.xml') as templ_file:
+                templ = templ_file.read()
+        else:
+            templ = pkg_resources.resource_string(__name__, "template.xml")
+        # use a different parser to ensure pretty-printing works
+        parser = etree.XMLParser(remove_blank_text=True)
+        super(VM, self).__init__(etree.fromstring(templ, parser=parser))
 
         self.name = hostname.replace('.', '-')
 
