@@ -166,7 +166,8 @@ for arg in (arg.split(':') for arg in args.share):
         if len(mode_args) > 1:
             mode = mode_args[1]
 
-    vm.share_directory(arg[0], arg[1], writable=writable, mode=mode)
+    vm.share_directory(os.path.abspath(arg[0]),
+                       arg[1], writable=writable, mode=mode)
 
 # inject files
 for arg in (arg.split(':') for arg in args.add_file):
