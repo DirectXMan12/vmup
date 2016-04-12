@@ -283,7 +283,13 @@ def make_disk_file(path, size, backing_file=None,
         command.extend(['-o', 'backing_file=%s' % backing_file])
 
     command.append(path)
-    command.append(size)
+
+    # convert from a libvirt-style size to a qemu-img-style size
+    size_parts = size.split(' ')
+    if len(size_parts) > 1:
+        size_parts[1] = size_parts[1][1]
+
+    command.append(''.join(size_parts))
 
     if os.path.exists(path):
         if not overwrite:

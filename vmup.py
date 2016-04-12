@@ -39,7 +39,7 @@ size_group = parser.add_argument_group("VM size")
 # TODO: support adding multiple disks
 size_group.add_argument("--size",
                         help="size of the main disk (default: 20 GiB)",
-                        default="20G")
+                        default="20 GiB")
 size_group.add_argument("--memory",
                         help=("amount of memory to give the VM"
                               "(default: 3 GiB)"), default="3 GiB")
