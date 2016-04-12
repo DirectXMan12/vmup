@@ -112,12 +112,12 @@ raw_args = []
 dotrc_path = os.path.expanduser('~/.vmuprc')
 if os.path.exists(dotrc_path):
     with open(dotrc_path) as dotrc:
-        raw_args.extend(shlex.split(dotrc.read()))
+        raw_args.extend(shlex.split(dotrc.read(), comments=True))
 
 dotfile_path = os.path.join(os.getcwd(), '.vmup')
 if os.path.exists(dotfile_path):
     with open(dotfile_path) as dotfile:
-        raw_args.extend(shlex.split(dotfile.read()))
+        raw_args.extend(shlex.split(dotfile.read(), comments=True))
 
 # TODO: manually expanduser on the raw_args arguments?
 raw_args.extend(sys.argv[1:])
