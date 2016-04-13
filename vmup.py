@@ -82,6 +82,7 @@ cmd_group.add_argument("--run-cmd", metavar="CMD",
                        help=("run a command after boot"), action="append",
                        default=[])
 cmd_group.add_argument("--add-packages", metavar="PKGS", default=[], nargs='+',
+                       action='append',
                        help="install the given package in the VM (multiple "
                             "packages may be installed by listing multiple "
                             "space-separated packages)")
@@ -234,7 +235,7 @@ for repo in args.add_repo:
 # NB: sross Fedora seems to have some AVC issues with doing an upgrade
 # vm.upgrade_all_packages()
 # install packages
-for pkg in args.add_packages:
+for pkg in (pkg for pkglist in args.add_packages for pkg in pkglist):
     vm.install_package(*pkg.split('-', 1))
 
 # write out any remaining data
