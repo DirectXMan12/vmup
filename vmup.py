@@ -55,7 +55,9 @@ dev_group.add_argument('--net', metavar="TYPE[:arg1=v1,arg2=v2,...]",
                        default="default")
 
 auth_group = parser.add_argument_group("auth")
-auth_group.add_argument("--password", help="password for the default user",
+auth_group.add_argument("--password", help="password for the user",
+                        default=None)
+auth_group.add_argument("--password-hash", help="password hash for the user",
                         default=None)
 auth_group.add_argument("--ssh-key", metavar="PATH",
                         help=("add an SSH key from a path to the default user "
@@ -210,7 +212,8 @@ else:
     groups = ['wheel']
 
 # configure user
-vm.configure_user(args.user, args.password, groups, authorized_keys)
+vm.configure_user(args.user, args.password, groups, authorized_keys,
+                  password_hash=args.password_hash)
 
 # set up the networking
 net_parts = args.net.split(':')

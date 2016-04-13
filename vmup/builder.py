@@ -145,6 +145,10 @@ class VM(vx.Domain):
         if name is None:
             # configure the default user
             # TODO: configure groups for default user?
+
+            if kwargs['password_hash'] is not None:
+                raise ValueError("The default user does not support passing password hashes")
+
             self.userdata.allow_ssh_password_auth = (password is not None)
             self.userdata.add_default_user(password=password,
                                            authorized_keys=authorized_keys)
@@ -153,6 +157,8 @@ class VM(vx.Domain):
             args = {}
             if password is None:
                 args['lock_password'] = True
+            elif kwargs['password_hash'] is not None:
+                args['lock_password'] = False
             else:
                 args['lock_password'] = False
                 args['password_hash'] = crypt.crypt(password)
@@ -160,6 +166,9 @@ class VM(vx.Domain):
             args['groups'] = groups
             args['ssh_authorized_keys'] = authorized_keys
             args['sudo'] = kwargs.get('sudo', ['ALL=(ALL) NOPASSWD:ALL'])
+
+            # mix in the passed args
+            args.update(kwargs)
 
             self.userdata.add_user(name, **args)
 
